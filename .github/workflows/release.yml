@@ -1,0 +1,147 @@
+name: CI
+
+# Lint, test and build on every push/PR. On a v* tag, also build the installer
+# and publish a GitHub Release. Everything runs on windows-latest because the
+# Fyne GUI needs CGO + a Windows C toolchain (preinstalled mingw on the runner).
+on:
+  push:
+    branches: ["**"]
+    tags:
+      - 'v*'
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "1"
+  VT_API_KEY: ${{ secrets.VT_API_KEY }}
+
+jobs:
+  ci:
+    name: Lint, test & build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        shell: bash
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "$out"
+            echo "::error::gofmt found issues; run 'gofmt -w .'"
+            exit 1
+          fi
+
+      - run: go vet ./...
+
+      - run: go test ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+      - name: Build
+        shell: bash
+        run: go build -trimpath -ldflags "-H windowsgui -X main.version=dev-${GITHUB_SHA::7}" -o clip-compress.exe .
+
+      - name: Build dev installer
+        if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DDev "/DAppVersion=0.0.0-dev-$($env:GITHUB_SHA.Substring(0,7))" build\installer.iss
+
+      - name: Scan with VirusTotal
+        if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') && env.VT_API_KEY != '' }}
+        uses: crazy-max/ghaction-virustotal@v5
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          request_rate: 4
+          files: |
+            clip-compress.exe
+            dist/ClipCompressSetup-Dev.exe
+
+      - name: Upload dev build
+        if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-compress-dev-${{ github.sha }}
+          path: |
+            clip-compress.exe
+            dist/ClipCompressSetup-Dev.exe
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs: ci
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        shell: bash
+        run: go build -trimpath -ldflags "-H windowsgui -X main.version=${GITHUB_REF_NAME}" -o clip-compress.exe .
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.version }}" build\installer.iss
+
+      - name: Scan with VirusTotal
+        id: vt
+        if: ${{ env.VT_API_KEY != '' }}
+        uses: crazy-max/ghaction-virustotal@v5
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          request_rate: 4
+          files: |
+            clip-compress.exe
+            dist/ClipCompressSetup.exe
+
+      - name: Package installer
+        shell: pwsh
+        run: Compress-Archive -Path dist\ClipCompressSetup.exe -DestinationPath "dist\ClipCompress-${{ steps.ver.outputs.version }}.zip"
+
+      - name: VirusTotal summary
+        id: vtsum
+        if: ${{ env.VT_API_KEY != '' }}
+        shell: bash
+        run: |
+          {
+            echo "results<<EOF"
+            echo "### VirusTotal scans"
+            for f in clip-compress.exe dist/ClipCompressSetup.exe; do
+              sha=$(sha256sum "$f" | cut -d ' ' -f1)
+              echo "- [$(basename "$f")](https://www.virustotal.com/gui/file/$sha)"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: ${{ steps.vtsum.outputs.results }}
+          files: dist/ClipCompress-${{ steps.ver.outputs.version }}.zip
