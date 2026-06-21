@@ -12,7 +12,7 @@
 
 ## How it works
 
-ClipCompress sits in the system tray and watches your clips folder (and every game subfolder under it). When NVIDIA's Instant Replay / ShadowPlay drops a new clip, ClipCompress waits for the file to finish writing, then re-encodes it with your GPU's NVENC encoder (AV1, HEVC, or H.264 depending on the card) and writes a much smaller file into the output folder. By default it targets a file size that fits Discord's free upload limit, so the result is ready to share.
+ClipCompress sits in the system tray and watches your clips folder (and every game subfolder under it). When NVIDIA's Instant Replay / ShadowPlay drops a new clip, ClipCompress waits for the file to finish writing, then re-encodes it with your GPU's NVENC encoder (AV1, HEVC, or H.264 depending on the card) and writes a much smaller file into the output folder. Encoding is constant-bitrate (1900 kbps by default), which keeps clips small enough to drop into Discord.
 
 ffmpeg is not shipped with the app — on first run it downloads a pinned build into your app-data folder.
 
@@ -24,11 +24,11 @@ Download `ClipCompressSetup.exe` from the [latest release](../../releases/latest
 
 ## Configuration
 
-Everything is configured from the tray: right-click the icon and choose **Settings…**. Pick the source and output folders, the encoding mode, and toggles for deleting originals, finish notifications, and start-at-login. Settings are saved automatically and applied live. Use **Pause** in the tray menu to stop processing temporarily.
+Everything is configured from the tray: right-click the icon and choose **Settings…**. Pick the source and output folders, the target video bitrate (kbps), and toggles for deleting originals, finish notifications, and start-at-login. Settings are saved on **Save** and applied live. Use **Pause** in the tray menu to stop processing temporarily.
 
 ## Encoding
 
-All encoding is hardware-accelerated through NVIDIA NVENC. The codec is chosen by **Auto** (default) — it probes your GPU and picks the best encoder that works — or you can pin one in Settings:
+All encoding is hardware-accelerated through NVIDIA NVENC. The codec is chosen automatically — it probes your GPU and picks the best encoder that works, trying AV1 → HEVC → H.264 in order:
 
 | Codec | GPU | Container | Audio |
 | ----- | --- | --------- | ----- |
@@ -36,11 +36,7 @@ All encoding is hardware-accelerated through NVIDIA NVENC. The codec is chosen b
 | HEVC  | RTX 20/30-series + most GTX | `.mp4` | AAC (stereo) |
 | H.264 | older / anything | `.mp4` | AAC (stereo) |
 
-AV1 uses the slowest/highest-quality NVENC preset (`p7`, `-tune hq`). Three rate modes are available:
-
-- **size** — fit each clip under a target size in MB (default 9 MB, safe for Discord's free tier). Raise it if you have Nitro.
-- **quality** — constant quality (`cq`, 0–51); file size varies with content.
-- **bitrate** — a fixed video bitrate in kbps.
+Every profile uses the slowest/highest-quality NVENC preset (`p7`, `-tune hq`) and encodes at a constant bitrate (`-rc cbr`, two-pass full-res). The only encoding knob is the target video bitrate in kbps, set in Settings (default 1900, floored at 200). Audio is re-encoded to stereo at 128 kbps.
 
 Clips are encoded one at a time to avoid GPU contention.
 
