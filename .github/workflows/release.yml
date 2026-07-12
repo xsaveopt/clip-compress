@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload dev build
         if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clip-compress-dev-${{ github.sha }}
           path: |
