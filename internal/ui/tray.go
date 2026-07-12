@@ -4,7 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 
-	"github.com/sratabix/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/config"
 )
 
 type TrayActions struct {

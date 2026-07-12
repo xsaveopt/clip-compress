@@ -10,7 +10,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/sratabix/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/config"
 )
 
 type Handler func(ctx context.Context, path string)

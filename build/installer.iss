@@ -14,7 +14,7 @@
   #define AppId "{{89044BE7-7091-487D-8FA1-20C83D11A643}"
   #define DirName "ClipCompress Dev"
   #define DataName "ClipCompress (Dev)"
-  #define FyneId "com.sratabix.clipcompress.dev"
+  #define FyneId "com.xsaveopt.clipcompress.dev"
   #define MutexName "Global\ClipCompress-Dev"
   #define RunName "ClipCompress (Dev)"
   #define OutBase "ClipCompressSetup-Dev"
@@ -23,7 +23,7 @@
   #define AppId "{{21301B41-E199-4652-818B-6C54717A49BA}"
   #define DirName "ClipCompress"
   #define DataName "ClipCompress"
-  #define FyneId "com.sratabix.clipcompress"
+  #define FyneId "com.xsaveopt.clipcompress"
   #define MutexName "Global\ClipCompress"
   #define RunName "ClipCompress"
   #define OutBase "ClipCompressSetup"
@@ -33,7 +33,7 @@
 AppId={#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=sratabix
+AppPublisher=xsaveopt
 ; Resolve [Files]/[Icons]/SetupIconFile/OutputDir relative to the repo root
 ; (this script lives in build/).
 SourceDir=..

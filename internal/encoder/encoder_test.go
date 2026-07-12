@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sratabix/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/config"
 )
 
 func argValue(args []string, flag string) string {

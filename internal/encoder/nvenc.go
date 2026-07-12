@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sratabix/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/config"
 )
 
 type Profile struct {

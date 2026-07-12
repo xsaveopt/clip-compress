@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/sratabix/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/config"
 )
 
 func NewSettingsWindow(app fyne.App, cfg *config.Config, onSave func()) fyne.Window {

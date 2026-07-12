@@ -15,13 +15,13 @@ import (
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 
-	"github.com/sratabix/clip-compress/internal/config"
-	"github.com/sratabix/clip-compress/internal/encoder"
-	"github.com/sratabix/clip-compress/internal/ffmpeg"
-	"github.com/sratabix/clip-compress/internal/singleton"
-	"github.com/sratabix/clip-compress/internal/startup"
-	"github.com/sratabix/clip-compress/internal/ui"
-	"github.com/sratabix/clip-compress/internal/watcher"
+	"github.com/xsaveopt/clip-compress/internal/config"
+	"github.com/xsaveopt/clip-compress/internal/encoder"
+	"github.com/xsaveopt/clip-compress/internal/ffmpeg"
+	"github.com/xsaveopt/clip-compress/internal/singleton"
+	"github.com/xsaveopt/clip-compress/internal/startup"
+	"github.com/xsaveopt/clip-compress/internal/ui"
+	"github.com/xsaveopt/clip-compress/internal/watcher"
 )
 
 var version = "dev"
@@ -39,14 +39,14 @@ type identity struct {
 func buildIdentity() identity {
 	if strings.HasPrefix(version, "v") {
 		return identity{
-			appID:    "com.sratabix.clipcompress",
+			appID:    "com.xsaveopt.clipcompress",
 			dataName: "ClipCompress",
 			runName:  "ClipCompress",
 			mutex:    `Global\ClipCompress`,
 		}
 	}
 	return identity{
-		appID:    "com.sratabix.clipcompress.dev",
+		appID:    "com.xsaveopt.clipcompress.dev",
 		dataName: "ClipCompress (Dev)",
 		runName:  "ClipCompress (Dev)",
 		mutex:    `Global\ClipCompress-Dev`,

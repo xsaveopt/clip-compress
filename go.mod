@@ -1,4 +1,4 @@
-module github.com/sratabix/clip-compress
+module github.com/xsaveopt/clip-compress
 
 go 1.26.3
 
