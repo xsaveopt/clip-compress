@@ -106,9 +106,9 @@ jobs:
           choco install innosetup -y --no-progress
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.version }}" build\installer.iss
 
-      - name: Package installer
+      - name: Name installer
         shell: pwsh
-        run: Compress-Archive -Path dist\ClipCompressSetup.exe -DestinationPath "dist\ClipCompress-${{ steps.ver.outputs.version }}.zip"
+        run: Rename-Item dist\ClipCompressSetup.exe "ClipCompressSetup-${{ steps.ver.outputs.version }}.exe"
 
       - name: Scan with VirusTotal
         id: vt
