@@ -1,22 +1,14 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"fyne.io/fyne/v2"
-)
-
-const (
-	keySourceDir      = "sourceDir"
-	keyOutputDir      = "outputDir"
-	keyVideoBitrateK  = "videoBitrateK"
-	keyDeleteOriginal = "deleteOriginal"
-	keyNotify         = "notify"
-	keyStartAtLogin   = "startAtLogin"
-	keyPaused         = "paused"
+	"sync"
 )
 
 const (
@@ -33,12 +25,66 @@ var (
 	imageExtensions = []string{".png", ".jpg", ".jpeg", ".bmp"}
 )
 
-type Config struct {
-	p fyne.Preferences
+type data struct {
+	SourceDir      string `json:"sourceDir"`
+	OutputDir      string `json:"outputDir"`
+	VideoBitrateK  int    `json:"videoBitrateK"`
+	DeleteOriginal bool   `json:"deleteOriginal"`
+	Notify         bool   `json:"notify"`
+	StartAtLogin   *bool  `json:"startAtLogin,omitempty"`
+	Paused         bool   `json:"paused"`
 }
 
-func New(p fyne.Preferences) *Config {
-	return &Config{p: p}
+type Config struct {
+	mu   sync.RWMutex
+	path string
+	d    data
+}
+
+func Load(dataName string) (*Config, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(base, dataName, "config.json")
+
+	c := &Config{
+		path: path,
+		d: data{
+			SourceDir:     defaultSourceDir(),
+			OutputDir:     defaultOutputDir(),
+			VideoBitrateK: 1900,
+		},
+	}
+
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return c, nil
+	}
+	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(raw, &c.d); err != nil {
+		return c, err
+	}
+	return c, nil
+}
+
+func (c *Config) Save() error {
+	c.mu.RLock()
+	raw, err := json.MarshalIndent(c.d, "", "  ")
+	c.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
+		return err
+	}
+	tmp := c.path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, c.path)
 }
 
 func defaultSourceDir() string {
@@ -57,26 +103,95 @@ func defaultOutputDir() string {
 	return filepath.Join(home, "Videos", "ClipCompress")
 }
 
-func (c *Config) SourceDir() string     { return c.p.StringWithFallback(keySourceDir, defaultSourceDir()) }
-func (c *Config) SetSourceDir(v string) { c.p.SetString(keySourceDir, v) }
+func (c *Config) SourceDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.SourceDir
+}
 
-func (c *Config) OutputDir() string     { return c.p.StringWithFallback(keyOutputDir, defaultOutputDir()) }
-func (c *Config) SetOutputDir(v string) { c.p.SetString(keyOutputDir, v) }
+func (c *Config) SetSourceDir(v string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.SourceDir = v
+}
 
-func (c *Config) VideoBitrateK() int     { return c.p.IntWithFallback(keyVideoBitrateK, 1900) }
-func (c *Config) SetVideoBitrateK(v int) { c.p.SetInt(keyVideoBitrateK, v) }
+func (c *Config) OutputDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.OutputDir
+}
 
-func (c *Config) DeleteOriginal() bool     { return c.p.BoolWithFallback(keyDeleteOriginal, false) }
-func (c *Config) SetDeleteOriginal(v bool) { c.p.SetBool(keyDeleteOriginal, v) }
+func (c *Config) SetOutputDir(v string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.OutputDir = v
+}
 
-func (c *Config) Notify() bool     { return c.p.BoolWithFallback(keyNotify, false) }
-func (c *Config) SetNotify(v bool) { c.p.SetBool(keyNotify, v) }
+func (c *Config) VideoBitrateK() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.VideoBitrateK
+}
 
-func (c *Config) StartAtLogin() bool     { return c.p.BoolWithFallback(keyStartAtLogin, true) }
-func (c *Config) SetStartAtLogin(v bool) { c.p.SetBool(keyStartAtLogin, v) }
+func (c *Config) SetVideoBitrateK(v int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.VideoBitrateK = v
+}
 
-func (c *Config) Paused() bool     { return c.p.BoolWithFallback(keyPaused, false) }
-func (c *Config) SetPaused(v bool) { c.p.SetBool(keyPaused, v) }
+func (c *Config) DeleteOriginal() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.DeleteOriginal
+}
+
+func (c *Config) SetDeleteOriginal(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.DeleteOriginal = v
+}
+
+func (c *Config) Notify() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.Notify
+}
+
+func (c *Config) SetNotify(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.Notify = v
+}
+
+func (c *Config) StartAtLogin() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.StartAtLogin != nil && *c.d.StartAtLogin
+}
+
+func (c *Config) SetStartAtLogin(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.StartAtLogin = &v
+}
+
+func (c *Config) StartAtLoginSet() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.StartAtLogin != nil
+}
+
+func (c *Config) Paused() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.d.Paused
+}
+
+func (c *Config) SetPaused(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.d.Paused = v
+}
 
 func (c *Config) Codec() string { return CodecAuto }
 

@@ -1,8 +1,3 @@
-; Inno Setup script for ClipCompress.
-; CI passes AppVersion via /DAppVersion=<x.y.z>. Pass /DDev to build a fully
-; isolated dev installer (separate name, AppId, install dir, data dir, Fyne
-; prefs, autostart entry and mutex) so testing dev builds never touches a real
-; install and uninstalls without residue.
 #define AppExeName "clip-compress.exe"
 
 #ifndef AppVersion
@@ -14,7 +9,6 @@
   #define AppId "{{89044BE7-7091-487D-8FA1-20C83D11A643}"
   #define DirName "ClipCompress Dev"
   #define DataName "ClipCompress (Dev)"
-  #define FyneId "com.xsaveopt.clipcompress.dev"
   #define MutexName "Global\ClipCompress-Dev"
   #define RunName "ClipCompress (Dev)"
   #define OutBase "ClipCompressSetup-Dev"
@@ -23,7 +17,6 @@
   #define AppId "{{21301B41-E199-4652-818B-6C54717A49BA}"
   #define DirName "ClipCompress"
   #define DataName "ClipCompress"
-  #define FyneId "com.xsaveopt.clipcompress"
   #define MutexName "Global\ClipCompress"
   #define RunName "ClipCompress"
   #define OutBase "ClipCompressSetup"
@@ -34,8 +27,6 @@ AppId={#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=xsaveopt
-; Resolve [Files]/[Icons]/SetupIconFile/OutputDir relative to the repo root
-; (this script lives in build/).
 SourceDir=..
 DefaultDirName={autopf}\{#DirName}
 DefaultGroupName={#AppName}
@@ -44,7 +35,6 @@ OutputDir=dist
 OutputBaseFilename={#OutBase}
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
-; Block install/uninstall while the app is running so nothing is left half-removed.
 AppMutex={#MutexName}
 Compression=lzma2
 SolidCompression=yes
@@ -56,26 +46,23 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Source: "{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
+[Tasks]
+Name: "startup"; Description: "{cm:AutoStartProgram,{#AppName}}"; GroupDescription: "{cm:AutoStartProgramGroupDescription}"; Flags: unchecked
+
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\icon.ico"
 Name: "{userstartmenu}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\icon.ico"
 
 [Registry]
-; Enable start-at-login on install; remove it on uninstall.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#RunName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#RunName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue; Tasks: startup
 
 [UninstallDelete]
-; Remove downloaded ffmpeg + app state and the Fyne preferences on uninstall.
 Type: filesandordirs; Name: "{userappdata}\{#DataName}"
-Type: filesandordirs; Name: "{userappdata}\fyne\{#FyneId}"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-{ Force-close a running instance (and its ffmpeg child) before install or
-  uninstall, so updates apply without asking the user to quit it manually.
-  Runs before the AppMutex check so no "please close" prompt appears. }
 procedure StopRunningApp;
 var
   ResultCode: Integer;

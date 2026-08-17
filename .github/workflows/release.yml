@@ -12,6 +12,7 @@ permissions:
 
 env:
   CGO_ENABLED: "1"
+  GOFLAGS: "-tags=nomanifest"
   VT_API_KEY: ${{ secrets.VT_API_KEY }}
 
 jobs:
@@ -44,6 +45,10 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
+
+      - name: Generate Windows resources
+        shell: bash
+        run: go tool goversioninfo -64 -arm=false -o resource_windows_amd64.syso build/versioninfo.json
 
       - name: Build
         shell: bash
@@ -95,6 +100,16 @@ jobs:
         id: ver
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Windows resources
+        shell: bash
+        run: |
+          v="${{ steps.ver.outputs.version }}"
+          IFS=. read -r major minor patch <<< "$v"
+          go tool goversioninfo -64 -arm=false -o resource_windows_amd64.syso \
+            -ver-major "${major:-0}" -ver-minor "${minor:-0}" -ver-patch "${patch:-0}" \
+            -file-version "$v.0" -product-version "$v.0" \
+            build/versioninfo.json
 
       - name: Build binary
         shell: bash

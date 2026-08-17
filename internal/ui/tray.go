@@ -1,10 +1,21 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/driver/desktop"
+	"image"
+
+	"github.com/gen2brain/iup-go/iup"
 
 	"github.com/xsaveopt/clip-compress/internal/config"
+)
+
+const (
+	appTitle      = "ClipCompress"
+	trayImageName = "clipcompress-tray"
+)
+
+const (
+	msgStatus = iota
+	msgNotify
 )
 
 type TrayActions struct {
@@ -15,42 +26,100 @@ type TrayActions struct {
 }
 
 type Tray struct {
-	app        fyne.App
-	icon       fyne.Resource
-	cfg        *config.Config
-	actions    TrayActions
-	statusItem *fyne.MenuItem
-	pauseItem  *fyne.MenuItem
-	menu       *fyne.Menu
+	dlg     iup.Ihandle
+	cfg     *config.Config
+	actions TrayActions
+	status  string
 }
 
-func NewTray(app fyne.App, cfg *config.Config, icon fyne.Resource, actions TrayActions) *Tray {
-	t := &Tray{app: app, icon: icon, cfg: cfg, actions: actions}
-	t.statusItem = fyne.NewMenuItem("Status: starting…", nil)
-	t.statusItem.Disabled = true
-	t.pauseItem = fyne.NewMenuItem(t.pauseLabel(), func() {
-		actions.TogglePause()
-		t.refresh()
-	})
-	t.menu = t.build()
+func NewTray(dlg iup.Ihandle, cfg *config.Config, icon image.Image, actions TrayActions) *Tray {
+	t := &Tray{dlg: dlg, cfg: cfg, actions: actions, status: "starting…"}
 
-	if desk, ok := app.(desktop.App); ok {
-		desk.SetSystemTrayIcon(icon)
-		desk.SetSystemTrayMenu(t.menu)
-	}
+	img := iup.ImageFromImage(icon)
+	iup.SetHandle(trayImageName, img)
+	iup.SetAttributeHandle(dlg, "ICON", img)
+
+	iup.Map(dlg)
+	dlg.SetAttributes(map[string]string{
+		"TRAY":                "YES",
+		"TRAYIMAGE":           trayImageName,
+		"TRAYTIP":             t.tip(),
+		"TRAYTIPBALLOONTITLE": appTitle,
+	})
+
+	dlg.SetCallback("TRAYCLICK_CB", iup.TrayClickFunc(func(_ iup.Ihandle, button, pressed, dclick int) int {
+		switch {
+		case button == 1 && dclick == 1:
+			t.actions.ShowSettings()
+		case button == 3 && pressed == 1:
+			t.popupMenu()
+		}
+		return iup.DEFAULT
+	}))
+
+	dlg.SetCallback("POSTMESSAGE_CB", iup.PostMessageFunc(func(_ iup.Ihandle, s string, code int, _ any) int {
+		switch code {
+		case msgStatus:
+			t.status = s
+			t.dlg.SetAttribute("TRAYTIP", t.tip())
+		case msgNotify:
+			t.balloon(s)
+		}
+		return iup.DEFAULT
+	}))
+
 	return t
 }
 
-func (t *Tray) build() *fyne.Menu {
-	return fyne.NewMenu("ClipCompress",
-		t.statusItem,
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Settings…", t.actions.ShowSettings),
-		fyne.NewMenuItem("Open output folder", t.actions.OpenOutput),
-		t.pauseItem,
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Quit", t.actions.Quit),
-	)
+func (t *Tray) SetStatus(s string) {
+	iup.PostMessage(t.dlg, s, msgStatus, nil)
+}
+
+func (t *Tray) Notify(body string) {
+	iup.PostMessage(t.dlg, body, msgNotify, nil)
+}
+
+func (t *Tray) tip() string {
+	return appTitle + " — " + t.status
+}
+
+func (t *Tray) balloon(body string) {
+	t.dlg.SetAttribute("TRAYTIPBALLOON", "YES")
+	t.dlg.SetAttribute("TRAYTIP", body)
+	t.dlg.SetAttribute("TRAYTIPBALLOON", "NO")
+}
+
+func (t *Tray) popupMenu() {
+	status := iup.MenuItem("Status: " + t.status).SetAttributes(map[string]string{"ACTIVE": "NO"})
+
+	settings := iup.MenuItem("Settings…")
+	settings.SetCallback("ACTION", iup.ActionFunc(func(iup.Ihandle) int {
+		t.actions.ShowSettings()
+		return iup.DEFAULT
+	}))
+
+	output := iup.MenuItem("Open output folder")
+	output.SetCallback("ACTION", iup.ActionFunc(func(iup.Ihandle) int {
+		t.actions.OpenOutput()
+		return iup.DEFAULT
+	}))
+
+	pause := iup.MenuItem(t.pauseLabel())
+	pause.SetCallback("ACTION", iup.ActionFunc(func(iup.Ihandle) int {
+		t.actions.TogglePause()
+		return iup.DEFAULT
+	}))
+
+	quit := iup.MenuItem("Quit")
+	quit.SetCallback("ACTION", iup.ActionFunc(func(iup.Ihandle) int {
+		t.actions.Quit()
+		return iup.DEFAULT
+	}))
+
+	menu := iup.Menu(status, iup.MenuSeparator(), settings, output, pause, iup.MenuSeparator(), quit)
+	defer menu.Destroy()
+
+	iup.Popup(menu, iup.MOUSEPOS, iup.MOUSEPOS)
 }
 
 func (t *Tray) pauseLabel() string {
@@ -58,18 +127,4 @@ func (t *Tray) pauseLabel() string {
 		return "Resume"
 	}
 	return "Pause"
-}
-
-func (t *Tray) SetStatus(s string) {
-	fyne.Do(func() {
-		t.statusItem.Label = "Status: " + s
-		t.refresh()
-	})
-}
-
-func (t *Tray) refresh() {
-	t.pauseItem.Label = t.pauseLabel()
-	if desk, ok := t.app.(desktop.App); ok {
-		desk.SetSystemTrayMenu(t.menu)
-	}
 }

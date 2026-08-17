@@ -6,9 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -35,32 +33,18 @@ func NewManager(dataName string) (*Manager, error) {
 }
 
 func exeName(stem string) string {
-	if runtime.GOOS == "windows" {
-		return stem + ".exe"
-	}
-	return stem
+	return stem + ".exe"
 }
 
 func (m *Manager) FFmpegPath() string {
-	if runtime.GOOS != "windows" {
-		return "ffmpeg"
-	}
 	return filepath.Join(m.dir, exeName("ffmpeg"))
 }
 
 func (m *Manager) FFprobePath() string {
-	if runtime.GOOS != "windows" {
-		return "ffprobe"
-	}
 	return filepath.Join(m.dir, exeName("ffprobe"))
 }
 
 func (m *Manager) Installed() bool {
-	if runtime.GOOS != "windows" {
-		_, err1 := exec.LookPath("ffmpeg")
-		_, err2 := exec.LookPath("ffprobe")
-		return err1 == nil && err2 == nil
-	}
 	return fileExists(m.FFmpegPath()) && fileExists(m.FFprobePath())
 }
 
@@ -69,9 +53,6 @@ type ProgressFunc func(done, total int64)
 func (m *Manager) Ensure(progress ProgressFunc) error {
 	if m.Installed() {
 		return nil
-	}
-	if runtime.GOOS != "windows" {
-		return fmt.Errorf("ffmpeg/ffprobe not found on PATH (install them for local dev)")
 	}
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return err
