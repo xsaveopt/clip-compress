@@ -16,8 +16,37 @@ env:
   VT_API_KEY: ${{ secrets.VT_API_KEY }}
 
 jobs:
+  ffmpeg:
+    name: Build ffmpeg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: build/ffmpeg/out
+          key: ffmpeg-${{ hashFiles('build/ffmpeg/build.sh') }}
+
+      - name: Install cross toolchain
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential mingw-w64 nasm yasm meson ninja-build cmake pkg-config curl xz-utils libz-mingw-w64-dev
+
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash build/ffmpeg/build.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-win64
+          path: build/ffmpeg/out
+          retention-days: 7
+
   ci:
     name: Lint, test & build
+    needs: ffmpeg
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,6 +82,24 @@ jobs:
       - name: Build
         shell: bash
         run: go build -trimpath -ldflags "-H windowsgui -X main.version=dev-${GITHUB_SHA::7}" -o clip-compress.exe .
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-win64
+          path: .
+
+      - name: Verify ffmpeg build
+        shell: bash
+        run: |
+          for enc in h264_nvenc hevc_nvenc av1_nvenc aac libopus; do
+            ./ffmpeg.exe -hide_banner -encoders | grep -qw "$enc" || { echo "::error::missing encoder $enc"; exit 1; }
+          done
+          ./ffmpeg.exe -hide_banner -loglevel error -f lavfi -i testsrc=duration=0.2:size=320x240:rate=30 \
+            -pix_fmt yuv420p -f null -
+          ./ffmpeg.exe -hide_banner -loglevel error -y -f lavfi -i sine=duration=0.2 -c:a aac -movflags +faststart smoke.mp4
+          ./ffmpeg.exe -hide_banner -loglevel error -y -f lavfi -i sine=duration=0.2 -c:a libopus smoke.webm
+          ./ffmpeg.exe -hide_banner -loglevel error -i smoke.mp4 -f null -
+          rm -f smoke.mp4 smoke.webm
 
       - name: Build dev installer
         if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
@@ -93,12 +140,13 @@ jobs:
           name: clip-compress-dev-${{ github.sha }}
           path: |
             clip-compress.exe
+            ffmpeg.exe
             dist/ClipCompressSetup-Dev.exe
           retention-days: 14
 
   release:
     name: Publish release
-    needs: ci
+    needs: [ffmpeg, ci]
     runs-on: windows-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -129,6 +177,11 @@ jobs:
       - name: Build binary
         shell: bash
         run: go build -trimpath -ldflags "-H windowsgui -X main.version=${GITHUB_REF_NAME}" -o clip-compress.exe .
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-win64
+          path: .
 
       - name: Build installer
         shell: pwsh

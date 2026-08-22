@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"fmt"
 	"image/png"
 	"io"
 	"log"
@@ -84,16 +83,16 @@ func main() {
 		log.Printf("start-at-login sync: %v", err)
 	}
 
-	mgr, err := ffmpeg.NewManager(id.dataName)
+	ffmpegPath, err := ffmpeg.Path()
 	if err != nil {
-		log.Fatalf("ffmpeg manager: %v", err)
+		log.Fatalf("locate ffmpeg: %v", err)
 	}
 
 	iup.Open()
 	defer iup.Close()
 	iup.SetGlobal("LOCKLOOP", "YES")
 
-	enc := &encoder.Encoder{FFmpegPath: mgr.FFmpegPath()}
+	enc := &encoder.Encoder{FFmpegPath: ffmpegPath}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -126,7 +125,7 @@ func main() {
 		Quit: func() { cancel(); iup.ExitLoop() },
 	})
 
-	go startBackground(ctx, cfg, mgr, enc, tray, w)
+	go startBackground(ctx, cfg, enc, tray, w)
 
 	iup.MainLoop()
 	cancel()
@@ -138,20 +137,12 @@ func saveConfig(cfg *config.Config) {
 	}
 }
 
-func startBackground(ctx context.Context, cfg *config.Config, mgr *ffmpeg.Manager, enc *encoder.Encoder, tray *ui.Tray, w *watcher.Watcher) {
-	if !mgr.Installed() {
-		tray.SetStatus("downloading ffmpeg…")
-		err := mgr.Ensure(func(done, total int64) {
-			if total > 0 {
-				tray.SetStatus(fmt.Sprintf("downloading ffmpeg… %d%%", done*100/total))
-			}
-		})
-		if err != nil {
-			tray.SetStatus("ffmpeg download failed")
-			notify(cfg, tray, "Could not download ffmpeg: "+err.Error())
-			log.Printf("ffmpeg ensure: %v", err)
-			return
-		}
+func startBackground(ctx context.Context, cfg *config.Config, enc *encoder.Encoder, tray *ui.Tray, w *watcher.Watcher) {
+	if !ffmpeg.Installed(enc.FFmpegPath) {
+		tray.SetStatus("ffmpeg missing")
+		notify(cfg, tray, "ffmpeg.exe is missing from the ClipCompress folder — reinstall the app")
+		log.Printf("ffmpeg not found at %s", enc.FFmpegPath)
+		return
 	}
 
 	applyCodec(cfg, enc, tray)

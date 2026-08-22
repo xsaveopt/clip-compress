@@ -2,3 +2,7 @@
 /clip-compress.exe
 /dist/
 *.syso
+/ffmpeg.exe
+/ffmpeg-*.txt
+build/ffmpeg/out/
+build/ffmpeg/.work/

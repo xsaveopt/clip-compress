@@ -14,11 +14,11 @@
 
 ClipCompress sits in the system tray and watches your clips folder (and every game subfolder under it). When NVIDIA's Instant Replay / ShadowPlay drops a new clip, ClipCompress waits for the file to finish writing, then re-encodes it with your GPU's NVENC encoder (AV1, HEVC, or H.264 depending on the card) and writes a much smaller file into the output folder. Encoding is constant-bitrate (1900 kbps by default), which keeps clips small enough to drop into Discord.
 
-ffmpeg is not shipped with the app — on first run it downloads a pinned build into your app-data folder.
+ffmpeg ships with the app. It is a purpose-built LGPL build cross-compiled from source in CI, carrying only the NVENC encoders, the AAC and Opus encoders, and the decoders needed to read your clips, which keeps it around a tenth the size of a general-purpose build. The build script and its exact configure flags live in `build/ffmpeg/build.sh`, and the licence and source links are installed next to the binary.
 
 ## Installation
 
-Download `ClipCompressSetup.exe` from the [latest release](../../releases/latest) and run it. The installer is per-user (no admin prompt) and adds a Start Menu shortcut. On first launch ClipCompress registers itself to start at login, downloads ffmpeg, and starts watching.
+Download `ClipCompressSetup.exe` from the [latest release](../../releases/latest) and run it. The installer is per-user (no admin prompt) and adds a Start Menu shortcut. On first launch ClipCompress registers itself to start at login and starts watching.
 
 > ⚠️ Encoding uses NVIDIA NVENC, so an NVIDIA GPU is required. AV1 needs an RTX 40-series (or newer); older cards fall back to HEVC or H.264 automatically. Without an NVIDIA GPU the tray shows an error and clips won't be encoded.
 
@@ -57,5 +57,14 @@ go build -tags nomanifest -ldflags "-H windowsgui -s -w" -o clip-compress.exe .
 ```
 
 The `nomanifest` tag matters: iup-go embeds a manifest of its own by default, and the linker refuses to merge two.
+
+The app looks for `ffmpeg.exe` beside its own executable and does nothing without it.
+That binary is cross-compiled from source with `build/ffmpeg/build.sh`, which needs a Linux host with mingw-w64, meson, ninja, cmake and nasm; run it in a container if you are not on Linux:
+
+```bash
+docker run --rm -v "$PWD/build/ffmpeg:/build" ubuntu:24.04 bash -c \
+  'apt-get update && apt-get install -y build-essential mingw-w64 nasm yasm meson ninja-build cmake pkg-config curl xz-utils libz-mingw-w64-dev && bash /build/build.sh'
+cp build/ffmpeg/out/ffmpeg.exe .
+```
 
 Releases (the `.exe` plus the Inno Setup installer) are built on a `windows-latest` GitHub runner — see `.github/workflows/release.yml`.

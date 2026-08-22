@@ -44,6 +44,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 [Files]
 Source: "{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ffmpeg-COPYING.LGPLv2.1.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ffmpeg-README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
