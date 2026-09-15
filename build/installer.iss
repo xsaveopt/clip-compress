@@ -46,7 +46,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Source: "{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "ffmpeg-COPYING.LGPLv2.1.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "ffmpeg-README.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "readme-ffmpeg.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
@@ -64,24 +64,3 @@ Type: filesandordirs; Name: "{userappdata}\{#DataName}"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-procedure StopRunningApp;
-var
-  ResultCode: Integer;
-begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /t /im {#AppExeName}', '',
-    SW_HIDE, ewWaitUntilTerminated, ResultCode);
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  StopRunningApp;
-  Result := True;
-end;
-
-function InitializeUninstall(): Boolean;
-begin
-  StopRunningApp;
-  Result := True;
-end;

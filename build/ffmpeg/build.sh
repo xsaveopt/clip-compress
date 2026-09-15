@@ -136,7 +136,7 @@ cp "$work/ffmpeg-build/ffmpeg.exe" "$out/ffmpeg.exe"
 "$host-strip" "$out/ffmpeg.exe"
 
 cp "$work/ffmpeg/COPYING.LGPLv2.1" "$out/ffmpeg-COPYING.LGPLv2.1.txt"
-cat > "$out/ffmpeg-README.txt" <<EOF
+cat > "$out/readme-ffmpeg.txt" <<EOF
 ffmpeg.exe shipped with ClipCompress is an unmodified build of FFmpeg $FFMPEG_VERSION,
 licensed under the GNU Lesser General Public License version 2.1 or later.
 It is built without --enable-gpl and without --enable-nonfree.
