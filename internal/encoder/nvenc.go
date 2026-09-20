@@ -25,12 +25,14 @@ var Profiles = map[string]Profile{
 
 var autoOrder = []string{config.CodecAV1, config.CodecHEVC, config.CodecH264}
 
+var probe = probeEncoder
+
 func ResolveProfile(ffmpegPath, want string) (Profile, error) {
 	if want == config.CodecAuto || want == "" {
 		var lastErr error
 		for _, k := range autoOrder {
 			p := Profiles[k]
-			if err := probeEncoder(ffmpegPath, p.VideoEnc); err == nil {
+			if err := probe(ffmpegPath, p.VideoEnc); err == nil {
 				return p, nil
 			} else {
 				lastErr = err
@@ -43,7 +45,7 @@ func ResolveProfile(ffmpegPath, want string) (Profile, error) {
 	if !ok {
 		return Profile{}, fmt.Errorf("unknown codec %q", want)
 	}
-	if err := probeEncoder(ffmpegPath, p.VideoEnc); err != nil {
+	if err := probe(ffmpegPath, p.VideoEnc); err != nil {
 		return Profile{}, err
 	}
 	return p, nil

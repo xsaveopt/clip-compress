@@ -45,9 +45,14 @@ func Disable(name string) error {
 	return err
 }
 
+var (
+	enable  = Enable
+	disable = Disable
+)
+
 func Sync(name string, want bool) error {
 	if want {
-		return Enable(name)
+		return enable(name)
 	}
-	return Disable(name)
+	return disable(name)
 }

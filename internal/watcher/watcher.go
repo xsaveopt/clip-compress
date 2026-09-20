@@ -23,6 +23,12 @@ type Watcher struct {
 	fsw  *fsnotify.Watcher
 	jobs chan string
 
+	interval   time.Duration
+	needStable time.Duration
+	timeout    time.Duration
+	sleep      func(time.Duration)
+	now        func() time.Time
+
 	mu       sync.Mutex
 	inflight map[string]bool
 	done     map[string]bool
@@ -33,12 +39,17 @@ func New(cfg *config.Config, handler Handler, log func(string)) *Watcher {
 		log = func(string) {}
 	}
 	return &Watcher{
-		cfg:      cfg,
-		handler:  handler,
-		log:      log,
-		jobs:     make(chan string, 16),
-		inflight: map[string]bool{},
-		done:     map[string]bool{},
+		cfg:        cfg,
+		handler:    handler,
+		log:        log,
+		jobs:       make(chan string, 16),
+		interval:   time.Second,
+		needStable: 2 * time.Second,
+		timeout:    5 * time.Minute,
+		sleep:      time.Sleep,
+		now:        time.Now,
+		inflight:   map[string]bool{},
+		done:       map[string]bool{},
 	}
 }
 
@@ -178,20 +189,17 @@ func (w *Watcher) trackStable(path string) {
 
 		var last int64 = -1
 		stableFor := time.Duration(0)
-		const interval = time.Second
-		const needStable = 2 * time.Second
-		const timeout = 5 * time.Minute
-		deadline := time.Now().Add(timeout)
+		deadline := w.now().Add(w.timeout)
 
-		for time.Now().Before(deadline) {
-			time.Sleep(interval)
+		for w.now().Before(deadline) {
+			w.sleep(w.interval)
 			info, err := os.Stat(path)
 			if err != nil {
 				return
 			}
 			if info.Size() == last && info.Size() > 0 {
-				stableFor += interval
-				if stableFor >= needStable {
+				stableFor += w.interval
+				if stableFor >= w.needStable {
 					break
 				}
 			} else {
