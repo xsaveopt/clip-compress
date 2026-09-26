@@ -298,3 +298,98 @@ func TestIsImage(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadWithoutAConfigDirFails(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("AppData", "")
+	t.Setenv("USERPROFILE", "")
+
+	c, err := Load(testAppName)
+	if err == nil {
+		t.Fatal("Load should fail when no config dir can be resolved")
+	}
+	if c != nil {
+		t.Errorf("Load returned %+v, want nil", c)
+	}
+}
+
+func TestLoadWithoutAHomeDirLeavesFoldersEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+	t.Setenv("AppData", filepath.Join(dir, "AppData"))
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	c, err := Load(testAppName)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.SourceDir() != "" || c.OutputDir() != "" {
+		t.Errorf("SourceDir = %q, OutputDir = %q, want both empty", c.SourceDir(), c.OutputDir())
+	}
+	if got := c.VideoBitrateK(); got != 1900 {
+		t.Errorf("VideoBitrateK = %d, want 1900", got)
+	}
+}
+
+func TestLoadUnreadableFileReturnsErrorAndDefaults(t *testing.T) {
+	home := isolateHome(t)
+	if err := os.MkdirAll(configPath(t), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	c, err := Load(testAppName)
+	if err == nil {
+		t.Fatal("Load should report a read error when config.json is a directory")
+	}
+	if c == nil {
+		t.Fatal("Load should still return a usable config")
+	}
+	if got, want := c.SourceDir(), filepath.Join(home, "Videos"); got != want {
+		t.Errorf("SourceDir = %q, want default %q", got, want)
+	}
+}
+
+func TestSaveFailsWhenTheDirIsAFile(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "ClipCompress")
+	if err := os.WriteFile(blocker, []byte("file"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	c := &Config{path: filepath.Join(blocker, "config.json")}
+
+	if err := c.Save(); err == nil {
+		t.Fatal("Save should fail when the config dir is a file")
+	}
+}
+
+func TestSaveFailsWhenTheTempFileCannotBeWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.MkdirAll(path+".tmp", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	c := &Config{path: path}
+
+	if err := c.Save(); err == nil {
+		t.Fatal("Save should fail when the temp file cannot be written")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("config stat err = %v, want no config written", err)
+	}
+}
+
+func TestSaveFailsWhenTheTargetIsADirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.MkdirAll(filepath.Join(path, "keep"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	c := &Config{path: path}
+
+	if err := c.Save(); err == nil {
+		t.Fatal("Save should fail when config.json is a directory")
+	}
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		t.Errorf("config.json stat = %v, %v, want the directory left alone", info, err)
+	}
+}

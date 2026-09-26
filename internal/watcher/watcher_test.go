@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -525,5 +526,137 @@ func TestRewatchRebuildsTheWatchListAfterASourceChange(t *testing.T) {
 	want := []string{".", "Clips"}
 	if !slices.Equal(got, want) {
 		t.Errorf("WatchList = %v, want %v", got, want)
+	}
+}
+
+func TestIsWithinRelativePathAgainstAbsoluteDir(t *testing.T) {
+	if isWithin("clip.mp4", t.TempDir()) {
+		t.Error("a relative path cannot be within an absolute dir")
+	}
+}
+
+func TestAddWatchLogsFailure(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	withFSW(t, w)
+	var logs []string
+	w.log = func(s string) { logs = append(logs, s) }
+	missing := filepath.Join(src, "gone")
+
+	w.addWatch(missing)
+
+	if len(logs) != 1 || !strings.HasPrefix(logs[0], "could not watch "+missing+": ") {
+		t.Errorf("logs = %q, want one could not watch entry for %q", logs, missing)
+	}
+}
+
+func TestWorkerRunsTheHandler(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	got := make(chan string, 1)
+	w.handler = func(_ context.Context, p string) { got <- p }
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	path := filepath.Join(src, "a.mp4")
+
+	go w.worker(ctx)
+	w.jobs <- path
+
+	select {
+	case p := <-got:
+		if p != path {
+			t.Errorf("handler got %q, want %q", p, path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler was never called")
+	}
+}
+
+func TestWorkerSkipsWhilePaused(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	cfg.SetPaused(true)
+	w, _ := newTestWatcher(t, cfg)
+	called := make(chan string, 1)
+	w.handler = func(_ context.Context, p string) { called <- p }
+	logs := make(chan string, 1)
+	w.log = func(s string) { logs <- s }
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go w.worker(ctx)
+	w.jobs <- filepath.Join(src, "a.mp4")
+
+	select {
+	case msg := <-logs:
+		if msg != "paused; skipping a.mp4" {
+			t.Errorf("log = %q, want the paused skip message", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("paused worker logged nothing")
+	}
+	select {
+	case p := <-called:
+		t.Errorf("handler called with %q while paused", p)
+	default:
+	}
+}
+
+func TestWorkerStopsOnCancel(t *testing.T) {
+	cfg, _, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		w.worker(ctx)
+		close(done)
+	}()
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not stop after cancel")
+	}
+}
+
+func TestStartHandlesExistingAndNewFiles(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	got := make(chan string, 4)
+	w.handler = func(_ context.Context, p string) { got <- p }
+	existing := filepath.Join(src, "old.mp4")
+	write(t, existing, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errc := make(chan error, 1)
+
+	go func() { errc <- w.Start(ctx) }()
+
+	expectHandled := func(want string) {
+		t.Helper()
+		select {
+		case p := <-got:
+			if p != want {
+				t.Fatalf("handler got %q, want %q", p, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("handler never got %q", want)
+		}
+	}
+	expectHandled(existing)
+
+	fresh := filepath.Join(src, "new.mkv")
+	write(t, fresh, 20)
+	expectHandled(fresh)
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil {
+			t.Errorf("Start = %v, want nil after cancel", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after cancel")
 	}
 }

@@ -188,3 +188,36 @@ func TestProbeEncoderMissingBinary(t *testing.T) {
 		t.Errorf("error = %v, want the encoder query message", err)
 	}
 }
+
+func TestProbeEncoderMissingFromTheBuild(t *testing.T) {
+	ffmpegPath := fakeFFmpeg(t, "probe-ok", " V....D h264_nvenc\n V....D hevc_nvenc\n")
+
+	err := probeEncoder(ffmpegPath, "av1_nvenc")
+	if err == nil || !strings.Contains(err.Error(), "this ffmpeg build has no av1_nvenc encoder") {
+		t.Fatalf("probeEncoder error = %v, want the missing encoder message", err)
+	}
+}
+
+func TestProbeEncoderTestEncodeFails(t *testing.T) {
+	ffmpegPath := fakeFFmpeg(t, "probe-broken", " V....D av1_nvenc\n")
+
+	err := probeEncoder(ffmpegPath, "av1_nvenc")
+	if err == nil {
+		t.Fatal("probeEncoder should fail when the test encode fails")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "av1_nvenc test encode failed") {
+		t.Errorf("error = %q, want the test encode message", msg)
+	}
+	if !strings.HasSuffix(msg, "\nno capable device") {
+		t.Errorf("error = %q, want it to end with the trimmed ffmpeg output", msg)
+	}
+}
+
+func TestProbeEncoderSucceeds(t *testing.T) {
+	ffmpegPath := fakeFFmpeg(t, "probe-ok", " V....D av1_nvenc\n")
+
+	if err := probeEncoder(ffmpegPath, "av1_nvenc"); err != nil {
+		t.Fatalf("probeEncoder: %v", err)
+	}
+}

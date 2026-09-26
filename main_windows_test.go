@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"image/png"
 	"log"
 	"os"
 	"path/filepath"
@@ -263,5 +264,32 @@ func TestOpenFolderEmptyPathIsANoOp(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("working dir has %d entries, want none", len(entries))
+	}
+}
+
+func TestEmbeddedIconDecodes(t *testing.T) {
+	img, err := png.Decode(bytes.NewReader(iconPNG))
+	if err != nil {
+		t.Fatalf("png.Decode: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() == 0 || b.Dy() == 0 {
+		t.Errorf("icon bounds = %v, want a non-empty image", b)
+	}
+}
+
+func TestCopyFileDestinationIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "shot.png")
+	dst := filepath.Join(dir, "out", "shot.png")
+	writeFile(t, src, "x")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	if err := copyFile(src, dst); err == nil {
+		t.Fatal("copyFile should fail when the destination is a directory")
+	}
+	if got := readFile(t, src); got != "x" {
+		t.Errorf("src = %q, want it left intact", got)
 	}
 }
