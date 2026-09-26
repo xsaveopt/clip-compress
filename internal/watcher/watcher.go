@@ -32,6 +32,7 @@ type Watcher struct {
 	mu       sync.Mutex
 	inflight map[string]bool
 	done     map[string]bool
+	seen     map[string]os.FileInfo
 }
 
 func New(cfg *config.Config, handler Handler, log func(string)) *Watcher {
@@ -50,6 +51,7 @@ func New(cfg *config.Config, handler Handler, log func(string)) *Watcher {
 		now:        time.Now,
 		inflight:   map[string]bool{},
 		done:       map[string]bool{},
+		seen:       map[string]os.FileInfo{},
 	}
 }
 
@@ -172,7 +174,12 @@ func (w *Watcher) isCandidate(path string) bool {
 }
 
 func (w *Watcher) trackStable(path string) {
+	current, statErr := os.Stat(path)
 	w.mu.Lock()
+	if w.done[path] && statErr == nil && changed(w.seen[path], current) {
+		delete(w.done, path)
+		delete(w.seen, path)
+	}
 	if w.inflight[path] || w.done[path] {
 		w.mu.Unlock()
 		return
@@ -188,6 +195,7 @@ func (w *Watcher) trackStable(path string) {
 		}()
 
 		var last int64 = -1
+		var settled os.FileInfo
 		stableFor := time.Duration(0)
 		deadline := w.now().Add(w.timeout)
 
@@ -200,12 +208,16 @@ func (w *Watcher) trackStable(path string) {
 			if info.Size() == last && info.Size() > 0 {
 				stableFor += w.interval
 				if stableFor >= w.needStable {
+					settled = info
 					break
 				}
 			} else {
 				stableFor = 0
 				last = info.Size()
 			}
+		}
+		if settled == nil {
+			return
 		}
 
 		w.mu.Lock()
@@ -214,6 +226,7 @@ func (w *Watcher) trackStable(path string) {
 			return
 		}
 		w.done[path] = true
+		w.seen[path] = settled
 		w.mu.Unlock()
 
 		select {
@@ -237,6 +250,13 @@ func (w *Watcher) worker(ctx context.Context) {
 			w.handler(ctx, path)
 		}
 	}
+}
+
+func changed(prev, cur os.FileInfo) bool {
+	if prev == nil {
+		return false
+	}
+	return !os.SameFile(prev, cur) || prev.Size() != cur.Size() || !prev.ModTime().Equal(cur.ModTime())
 }
 
 func isWithin(path, dir string) bool {
