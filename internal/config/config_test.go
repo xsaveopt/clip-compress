@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -391,5 +392,63 @@ func TestSaveFailsWhenTheTargetIsADirectory(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || !info.IsDir() {
 		t.Errorf("config.json stat = %v, %v, want the directory left alone", info, err)
+	}
+}
+
+func TestConcurrentAccessIsSafe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	c := &Config{path: path}
+	const rounds = 200
+
+	var wg sync.WaitGroup
+	for i := range 4 {
+		wg.Go(func() {
+			for j := range rounds {
+				v := i*rounds + j
+				c.SetSourceDir("src")
+				c.SetOutputDir("out")
+				c.SetVideoBitrateK(v)
+				c.SetDeleteOriginal(v%2 == 0)
+				c.SetNotify(v%3 == 0)
+				c.SetStartAtLogin(v%5 == 0)
+				c.SetPaused(v%7 == 0)
+			}
+		})
+		wg.Go(func() {
+			for range rounds {
+				_ = c.SourceDir()
+				_ = c.OutputDir()
+				_ = c.VideoBitrateK()
+				_ = c.DeleteOriginal()
+				_ = c.Notify()
+				_ = c.StartAtLogin()
+				_ = c.StartAtLoginSet()
+				_ = c.Paused()
+			}
+		})
+	}
+	wg.Go(func() {
+		for range rounds / 10 {
+			if err := c.Save(); err != nil {
+				t.Errorf("Save: %v", err)
+				return
+			}
+		}
+	})
+	wg.Wait()
+
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var got data
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("saved file is not valid JSON: %v", err)
+	}
+	if got.VideoBitrateK != c.VideoBitrateK() || got.Paused != c.Paused() || got.SourceDir != "src" {
+		t.Errorf("saved %+v, want it to match the final in-memory state", got)
 	}
 }

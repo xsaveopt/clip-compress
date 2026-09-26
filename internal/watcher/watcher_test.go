@@ -459,7 +459,16 @@ func TestTrackStableDropsAVanishedFile(t *testing.T) {
 	}
 }
 
-func TestTrackStableGivesUpOnAnEmptyFileAfterTheTimeout(t *testing.T) {
+func waitIdle(t *testing.T, w *Watcher, path string) {
+	t.Helper()
+	waitUntil(t, func() bool {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return !w.inflight[path]
+	}, "path still in flight")
+}
+
+func TestTrackStableDoesNotQueueAnEmptyFileAfterTheTimeout(t *testing.T) {
 	cfg, src, _ := testConfig(t)
 	w, clock := newTestWatcher(t, cfg)
 
@@ -467,11 +476,195 @@ func TestTrackStableGivesUpOnAnEmptyFileAfterTheTimeout(t *testing.T) {
 	write(t, path, 0)
 
 	w.trackStable(path)
-	drainJobs(t, w, 1)
+	waitIdle(t, w, path)
 
+	expectNoJob(t, w)
 	elapsed := clock.now().Sub(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	if elapsed < w.timeout {
 		t.Errorf("gave up after %v, want the full %v timeout", elapsed, w.timeout)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.done[path] {
+		t.Error("an empty file that never settled should not be marked done")
+	}
+}
+
+func TestTrackStableDoesNotQueueAFileStillGrowingAtTheTimeout(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, clock := newTestWatcher(t, cfg)
+
+	path := filepath.Join(src, "a.mp4")
+	write(t, path, 1)
+	var mu sync.Mutex
+	size := 1
+	clock.onWake = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		size++
+		write(t, path, size)
+	}
+
+	w.trackStable(path)
+	waitIdle(t, w, path)
+
+	expectNoJob(t, w)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.done[path] {
+		t.Error("a file still growing at the timeout should not be marked done")
+	}
+}
+
+func TestHandleEventRequeuesAFileRecreatedAfterDeletion(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	withFSW(t, w)
+
+	path := filepath.Join(src, "a.mp4")
+	write(t, path, 10)
+	w.handleEvent(fsnotify.Event{Name: path, Op: fsnotify.Create})
+	drainJobs(t, w, 1)
+	waitIdle(t, w, path)
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	w.handleEvent(fsnotify.Event{Name: path, Op: fsnotify.Remove})
+	write(t, path, 20)
+	w.handleEvent(fsnotify.Event{Name: path, Op: fsnotify.Create})
+
+	if got := drainJobs(t, w, 1); got[0] != path {
+		t.Errorf("queued %q, want the recreated %q", got[0], path)
+	}
+}
+
+func TestRewatchRequeuesAFileRecreatedAfterDeletion(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	withFSW(t, w)
+
+	path := filepath.Join(src, "a.mp4")
+	write(t, path, 10)
+	w.scanExisting(src)
+	drainJobs(t, w, 1)
+	waitIdle(t, w, path)
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	write(t, path, 20)
+	w.Rewatch()
+
+	if got := drainJobs(t, w, 1); got[0] != path {
+		t.Errorf("queued %q, want the recreated %q", got[0], path)
+	}
+}
+
+func TestRewatchQueuesFilesInTheNewSource(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	withFSW(t, w)
+	w.addTree(src)
+
+	other := filepath.Join(filepath.Dir(src), "Other")
+	clip := filepath.Join(other, "Clips", "b.mkv")
+	write(t, clip, 10)
+	write(t, filepath.Join(other, "ClipCompress", "b (av1).webm"), 10)
+	cfg.SetSourceDir(other)
+	cfg.SetOutputDir(filepath.Join(other, "ClipCompress"))
+
+	w.Rewatch()
+
+	if got := drainJobs(t, w, 1); got[0] != clip {
+		t.Errorf("queued %q, want %q", got[0], clip)
+	}
+	expectNoJob(t, w)
+}
+
+func TestStartReturnsWhenTheEventChannelCloses(t *testing.T) {
+	cfg, src, _ := testConfig(t)
+	w, _ := newTestWatcher(t, cfg)
+	handled := make(chan string, 1)
+	w.handler = func(_ context.Context, p string) { handled <- p }
+	write(t, filepath.Join(src, "a.mp4"), 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errc := make(chan error, 1)
+
+	go func() { errc <- w.Start(ctx) }()
+
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start never handled the existing file")
+	}
+	if err := w.fsw.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case err := <-errc:
+		if err != nil {
+			t.Errorf("Start = %v, want nil once the watcher is closed", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after the event channel closed")
+	}
+}
+
+func TestStartSkipsItsOwnOutputsInsideTheSource(t *testing.T) {
+	cfg, src, out := testConfig(t)
+	if err := os.RemoveAll(out); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	w, _ := newTestWatcher(t, cfg)
+	handled := make(chan string, 16)
+	w.handler = func(_ context.Context, p string) { handled <- p }
+	first := filepath.Join(src, "first.mp4")
+	write(t, first, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errc := make(chan error, 1)
+	go func() { errc <- w.Start(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-errc
+	})
+
+	next := func() string {
+		t.Helper()
+		select {
+		case p := <-handled:
+			return p
+		case <-time.After(5 * time.Second):
+			t.Fatal("handler was not called")
+			return ""
+		}
+	}
+	if got := next(); got != first {
+		t.Fatalf("handler got %q, want %q", got, first)
+	}
+
+	write(t, filepath.Join(out, "first (av1).webm"), 10)
+	write(t, filepath.Join(out, "raw.mp4"), 10)
+	write(t, filepath.Join(out, "nested", "deep.mkv"), 10)
+	write(t, filepath.Join(out, "nested", "deeper.mov"), 10)
+	last := filepath.Join(src, "last.mp4")
+	write(t, last, 10)
+
+	if got := next(); got != last {
+		t.Fatalf("handler got %q, want %q", got, last)
+	}
+	select {
+	case p := <-handled:
+		t.Errorf("handler got own output %q", p)
+	case <-time.After(300 * time.Millisecond):
+	}
+	for _, p := range w.fsw.WatchList() {
+		if isWithin(p, out) {
+			t.Errorf("output dir %q is being watched", p)
+		}
 	}
 }
 

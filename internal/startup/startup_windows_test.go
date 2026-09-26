@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 func stubRegistry(t *testing.T) (*[]string, *[]string, *error) {
@@ -85,5 +87,72 @@ func TestRunKeyPath(t *testing.T) {
 	const want = `Software\Microsoft\Windows\CurrentVersion\Run`
 	if runKeyPath != want {
 		t.Errorf("runKeyPath = %q, want %q", runKeyPath, want)
+	}
+}
+
+func TestEnableEnabledDisableRoundTrip(t *testing.T) {
+	name := fmt.Sprintf("ClipCompressTest-%d-roundtrip", os.Getpid())
+	t.Cleanup(func() { _ = Disable(name) })
+
+	if Enabled(name) {
+		t.Fatalf("Enabled(%q) = true before Enable", name)
+	}
+	if err := Enable(name); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if !Enabled(name) {
+		t.Errorf("Enabled(%q) = false after Enable", name)
+	}
+	if err := Disable(name); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	if Enabled(name) {
+		t.Errorf("Enabled(%q) = true after Disable", name)
+	}
+	if err := Disable(name); err != nil {
+		t.Errorf("second Disable = %v, want nil", err)
+	}
+}
+
+func TestEnableStoresTheQuotedExecutablePath(t *testing.T) {
+	name := fmt.Sprintf("ClipCompressTest-%d-quoted", os.Getpid())
+	t.Cleanup(func() { _ = Disable(name) })
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
+
+	if err := Enable(name); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+
+	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("OpenKey: %v", err)
+	}
+	defer k.Close()
+	got, _, err := k.GetStringValue(name)
+	if err != nil {
+		t.Fatalf("GetStringValue: %v", err)
+	}
+	if want := `"` + exe + `"`; got != want {
+		t.Errorf("run value = %q, want %q", got, want)
+	}
+}
+
+func TestEnableTwiceKeepsOneEntry(t *testing.T) {
+	name := fmt.Sprintf("ClipCompressTest-%d-twice", os.Getpid())
+	t.Cleanup(func() { _ = Disable(name) })
+
+	for range 2 {
+		if err := Enable(name); err != nil {
+			t.Fatalf("Enable: %v", err)
+		}
+	}
+	if err := Disable(name); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	if Enabled(name) {
+		t.Errorf("Enabled(%q) = true after one Disable following two Enables", name)
 	}
 }
