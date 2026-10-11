@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/iup-go/iup v0.32.1-0.20260801124043-1e810692ec62
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
